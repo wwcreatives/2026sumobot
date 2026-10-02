@@ -161,7 +161,7 @@ void loop() {
 
   if (leftEnemyDetected && rightEnemyDetected) {
     tft.setCursor(10,10);
-    tft.print("ENEMY DETECTED");
+    tft.printf("%-23s", "ENEMY DETECTED");
 
     int error = leftDistance - rightDistance;
     int correction = Kp * error;
@@ -183,7 +183,7 @@ void loop() {
   // ONLY LEFT ultrasonic detects opponent
   else if (leftEnemyDetected) {
     tft.setCursor(10,10);
-    tft.print("ENEMY DETECTED ON LEFT");
+    tft.printf("%-23s", "ENEMY DETECTED ON LEFT");
 
     turnLeft(getPWM(55), getPWM(55));
   }
@@ -191,16 +191,15 @@ void loop() {
   // ONLY RIGHT ultrasonic detects opponent
   else if (rightEnemyDetected) {
     tft.setCursor(10,10);
-    tft.print("ENEMY DETECTED ON RIGHT");
+    tft.printf("%-23s", "ENEMY DETECTED ON RIGHT");
     turnRight(getPWM(55), getPWM(55));
   }
 
   // NEITHER ultrasonic detects opponent
   else {
     tft.setCursor(10,10);
-    tft.print("ENEMY NOT FOUND");
+    tft.printf("%-23s", "ENEMY NOT FOUND");
     // Search for opponent by continuously rotating
     turnRight(getPWM(45), getPWM(45));
   }
-  tft.fillRect(10,10,50,30,TFT_BLACK);
 }
