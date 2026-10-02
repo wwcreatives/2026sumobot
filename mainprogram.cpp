@@ -15,6 +15,7 @@
 #define TRIG_R 16
 #define MAX_DISTANCE 200 // Most accurate
 
+#define LCD_POWER 15
 
 #define LINE_L 43 // High "1" as int on BLACK Low "0" as int on WHITE
 #define LINE_R 44
