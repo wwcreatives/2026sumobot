@@ -124,6 +124,11 @@ void setup() {
   pinMode (LINE_L, INPUT); // define tracing sensor L output interface
   pinMode (LINE_R, INPUT); // define tracing sensor R output interface
 
+  pinMode(LCD_POWER_ON, OUTPUT);
+  digitalWrite(LCD_POWER_ON, HIGH);
+  pinMode(38, OUTPUT);
+  digitalWrite(38, HIGH);
+
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
   pinMode(IN3, OUTPUT);
@@ -174,8 +179,8 @@ void loop() {
     }
 
     else {
-      int leftPWM = constrain(basePWM + correction, 0, MAX_PWM);
-      int rightPWM = constrain(basePWM - correction, 0, MAX_PWM);
+      int leftPWM = constrain(basePWM - correction, 0, MAX_PWM);
+      int rightPWM = constrain(basePWM + correction, 0, MAX_PWM);
       moveForward(leftPWM, rightPWM);
     }
   }
