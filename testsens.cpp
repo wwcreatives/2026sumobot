@@ -33,6 +33,10 @@ void setup() {
 
   pinMode(LINE_L, INPUT);
   pinMode(LINE_R, INPUT);
+  pinMode(LCD_POWER_ON, OUTPUT);
+  digitalWrite(LCD_POWER_ON, HIGH);
+  pinMode(38, OUTPUT);
+  digitalWrite(38, HIGH);
 
   tft.init();
   tft.setRotation(1);
