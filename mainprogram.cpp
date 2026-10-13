@@ -33,13 +33,20 @@
 #define TURN_180_TIME 840
 #define TURN_360_TIME 1680
 
-#define OPPONENT_THRESHOLD 120
-#define ATTACK_DISTANCE 100
+#define OPPONENT_THRESHOLD 100
+#define ATTACK_DISTANCE 80
+
+#define EDGE_REVERSE_TIME 250
+#define EDGE_TURN_TIME 350
+
+int edgeState = 0;       // 0 = normal, 1 = reversing, 2 = turning
+int edgeDirection = 0;   // -1 = left, 1 = right
+unsigned long edgeStartTime = 0;
 
 bool leftButton = false;
 bool rightButton = false;
 
-float Kp = 50.0;
+float Kp = 100.0;
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -51,11 +58,11 @@ int getPWM(int pwmPercent) {
 }
 
 int leftEdgeDetected() {
-  int leftLineStatus = !digitalRead(LINE_L); // digital interface will be assigned a value of 3 to read val
+  int leftLineStatus = digitalRead(LINE_L); // digital interface will be assigned a value of 3 to read val
   return leftLineStatus;
 }
 int rightEdgeDetected() {
-  int rightLineStatus = !digitalRead(LINE_R); // digital interface will be assigned a value of 3 to read val
+  int rightLineStatus = digitalRead(LINE_R); // digital interface will be assigned a value of 3 to read val
   return rightLineStatus;
 }
 
@@ -98,21 +105,21 @@ void dontMove() {
 
 // Functions for left right pivoting/turning on spot NOT for driving
 void turnLeft(int leftPWM, int rightPWM) {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, HIGH);
-
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
-
-  ledcWrite(PWM_CH_L, leftPWM);
-  ledcWrite(PWM_CH_R, rightPWM);
-}
-void turnRight(int leftPWM, int rightPWM) {
   digitalWrite(IN1, HIGH);
   digitalWrite(IN2, LOW);
 
   digitalWrite(IN3, LOW);
   digitalWrite(IN4, HIGH);
+
+  ledcWrite(PWM_CH_L, leftPWM);
+  ledcWrite(PWM_CH_R, rightPWM);
+}
+void turnRight(int leftPWM, int rightPWM) {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
 
   ledcWrite(PWM_CH_L, leftPWM);
   ledcWrite(PWM_CH_R, rightPWM);
@@ -148,63 +155,65 @@ void setup() {
 }
 
 void loop() {
-  // if (leftEdgeDetected() || rightEdgeDetected()) {
-  //   if (leftEdgeDetected() && rightEdgeDetected()) {
-  //   }
-  //   else if (leftEdgeDetected()) {
-  //   }
-  //   else if (rightEdgeDetected()) {
-  //   }
-  //   return;
-  // }
-
-  int leftDistance = leftSensorDistance();
-  int rightDistance = rightSensorDistance();
-
-  bool leftEnemyDetected = leftDistance > 0 && leftDistance <= OPPONENT_THRESHOLD;
-  bool rightEnemyDetected = rightDistance > 0 && rightDistance <= OPPONENT_THRESHOLD;
-
-  if (leftEnemyDetected && rightEnemyDetected) {
-    tft.setCursor(10,10);
-    tft.printf("%-23s", "ENEMY DETECTED");
-
-    int error = leftDistance - rightDistance;
-    int correction = Kp * error;
-
-    int basePWM = getPWM(70);
-
-    // If opponent is at attack distance and centred, attack at full speed
-    if (leftDistance <= ATTACK_DISTANCE && rightDistance <= ATTACK_DISTANCE && abs(error) <= 3) {
-      moveForward(MAX_PWM, MAX_PWM);
-    }
-
-    else {
-      int leftPWM = constrain(basePWM - correction, 0, MAX_PWM);
-      int rightPWM = constrain(basePWM + correction, 0, MAX_PWM);
-      moveForward(leftPWM, rightPWM);
-    }
+  if (leftEdgeDetected() && rightEdgeDetected()) {
+    turnRight(getPWM(80), getPWM(80));
   }
-
-  // ONLY LEFT ultrasonic detects opponent
-  else if (leftEnemyDetected) {
-    tft.setCursor(10,10);
-    tft.printf("%-23s", "ENEMY DETECTED ON LEFT");
-
-    turnLeft(getPWM(55), getPWM(55));
+  else if (leftEdgeDetected()) {
+    turnRight(getPWM(80), getPWM(80));
   }
-
-  // ONLY RIGHT ultrasonic detects opponent
-  else if (rightEnemyDetected) {
-    tft.setCursor(10,10);
-    tft.printf("%-23s", "ENEMY DETECTED ON RIGHT");
-    turnRight(getPWM(55), getPWM(55));
+  else if (rightEdgeDetected()) {
+    turnLeft(getPWM(80), getPWM(80));
   }
-
-  // NEITHER ultrasonic detects opponent
   else {
-    tft.setCursor(10,10);
-    tft.printf("%-23s", "ENEMY NOT FOUND");
-    // Search for opponent by continuously rotating
-    turnRight(getPWM(45), getPWM(45));
+    int leftDistance = leftSensorDistance();
+    int rightDistance = rightSensorDistance();
+
+    bool leftEnemyDetected = (leftDistance > 0) && (leftDistance <= OPPONENT_THRESHOLD);
+    bool rightEnemyDetected = (rightDistance > 0) && (rightDistance <= OPPONENT_THRESHOLD);
+
+    if (leftEnemyDetected && rightEnemyDetected) {
+      tft.setCursor(10,10);
+      tft.printf("%-23s", "ENEMY DETECTED");
+
+      int error = leftDistance - rightDistance;
+      int correction = Kp * error;
+
+      int basePWM = getPWM(70);
+
+      // If opponent is at attack distance and centred, attack at full speed
+      if ((leftDistance <= ATTACK_DISTANCE) && (rightDistance <= ATTACK_DISTANCE) && (abs(error) <= 3)) {
+        moveForward(MAX_PWM, MAX_PWM);
+      }
+
+      else {
+        int leftPWM = constrain(basePWM + correction, 0, MAX_PWM);
+        int rightPWM = constrain(basePWM - correction, 0, MAX_PWM);
+        moveForward(leftPWM, rightPWM);
+      }
+    }
+
+    // ONLY LEFT ultrasonic detects opponent
+    else if (leftEnemyDetected) {
+      tft.setCursor(10,10);
+      tft.printf("%-23s", "ENEMY DETECTED ON LEFT");
+
+      turnLeft(getPWM(55), getPWM(55));
+    }
+
+    // ONLY RIGHT ultrasonic detects opponent
+    else if (rightEnemyDetected) {
+      tft.setCursor(10,10);
+      tft.printf("%-23s", "ENEMY DETECTED ON RIGHT");
+      turnRight(getPWM(55), getPWM(55));
+    }
+
+    // NEITHER ultrasonic detects opponent
+    if (!rightEnemyDetected && !leftEnemyDetected) {
+      tft.setCursor(10,10);
+      tft.printf("%-23s", "ENEMY NOT FOUND");
+      // Search for opponent by continuously rotating
+      turnRight(getPWM(75), getPWM(75));
+    }
   }
+  return;
 }
