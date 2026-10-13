@@ -33,8 +33,8 @@
 #define TURN_180_TIME 840
 #define TURN_360_TIME 1680
 
-#define OPPONENT_THRESHOLD 60
-#define ATTACK_DISTANCE 30
+#define OPPONENT_THRESHOLD 120
+#define ATTACK_DISTANCE 100
 
 bool leftButton = false;
 bool rightButton = false;
