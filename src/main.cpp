@@ -1,6 +1,8 @@
+
 #include <Arduino.h>
 #include <NewPing.h>
 #include <TFT_eSPI.h>
+#include "esp_system.h"
 
 // Right: IN1/2 Left: IN3/4
 #define ENA 17
@@ -10,15 +12,15 @@
 #define IN4 10
 #define ENB 18
 
+// Only LEFT ultrasonic sensor
 #define ECHO_L 11
 #define TRIG_L 12
-#define ECHO_R 13
-#define TRIG_R 16
-#define MAX_DISTANCE 200 // Most accurate
+#define MAX_DISTANCE 200
 
 #define LCD_POWER 15
 
-#define LINE_L 43 // High "1" as int on BLACK Low "0" as int on WHITE
+// HIGH = BLACK, LOW = WHITE
+#define LINE_L 43
 #define LINE_R 44
 
 // PWM Assignments
@@ -29,110 +31,142 @@
 #define PWM_RES 12
 #define MAX_PWM 4095
 
-#define TURN_90_TIME  420
-#define TURN_180_TIME 840
-#define TURN_360_TIME 1680
+#define OPPONENT_THRESHOLD 75
+#define ATTACK_DISTANCE 40
 
-#define OPPONENT_THRESHOLD 100
-#define ATTACK_DISTANCE 80
+#define RAMP_INTERVAL 5
+#define RAMP_STEP 200
 
-#define EDGE_REVERSE_TIME 250
-#define EDGE_TURN_TIME 350
+int currentLeftPWM = 0;
+int currentRightPWM = 0;
 
-int edgeState = 0;       // 0 = normal, 1 = reversing, 2 = turning
-int edgeDirection = 0;   // -1 = left, 1 = right
-unsigned long edgeStartTime = 0;
+int targetLeftPWM = 0;
+int targetRightPWM = 0;
 
-bool leftButton = false;
-bool rightButton = false;
+int currentLeftDirection = 0;
+int currentRightDirection = 0;
 
-float Kp = 100.0;
+int targetLeftDirection = 0;
+int targetRightDirection = 0;
+
+unsigned long lastRampTime = 0;
+unsigned long lastDisplayTime = 0;
 
 TFT_eSPI tft = TFT_eSPI();
 
 NewPing sonarL(TRIG_L, ECHO_L, MAX_DISTANCE);
-NewPing sonarR(TRIG_R, ECHO_R, MAX_DISTANCE);
 
 int getPWM(int pwmPercent) {
-  return (pwmPercent * MAX_PWM) / 100; // Max 100 percent PWM (half speed 50%, etc.)
+  return (pwmPercent * MAX_PWM) / 100;
 }
 
 int leftEdgeDetected() {
-  int leftLineStatus = digitalRead(LINE_L); // digital interface will be assigned a value of 3 to read val
-  return leftLineStatus;
+  return digitalRead(LINE_L);
 }
+
 int rightEdgeDetected() {
-  int rightLineStatus = digitalRead(LINE_R); // digital interface will be assigned a value of 3 to read val
-  return rightLineStatus;
+  return digitalRead(LINE_R);
 }
 
 int leftSensorDistance() {
   return sonarL.ping_cm();
 }
-int rightSensorDistance() {
-  return sonarR.ping_cm();
+
+// Set desired motor direction and PWM
+void setMotorTargets(int leftDir, int rightDir,
+                     int leftPWM, int rightPWM) {
+  targetLeftDirection = leftDir;
+  targetRightDirection = rightDir;
+
+  targetLeftPWM = constrain(leftPWM, 0, MAX_PWM);
+  targetRightPWM = constrain(rightPWM, 0, MAX_PWM);
 }
 
 void moveForward(int leftPWM, int rightPWM) {
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
-
-  ledcWrite(PWM_CH_L, leftPWM);
-  ledcWrite(PWM_CH_R, rightPWM);
+  setMotorTargets(1, 1, leftPWM, rightPWM);
 }
+
 void moveBackward(int leftPWM, int rightPWM) {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, HIGH);
-
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, HIGH);
-
-  ledcWrite(PWM_CH_L, leftPWM);
-  ledcWrite(PWM_CH_R, rightPWM);
+  setMotorTargets(-1, -1, leftPWM, rightPWM);
 }
+
 void dontMove() {
-  ledcWrite(PWM_CH_L, 0);
-  ledcWrite(PWM_CH_R, 0);
-
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, LOW);
+  setMotorTargets(0, 0, 0, 0);
 }
 
-// Functions for left right pivoting/turning on spot NOT for driving
 void turnLeft(int leftPWM, int rightPWM) {
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, HIGH);
-
-  ledcWrite(PWM_CH_L, leftPWM);
-  ledcWrite(PWM_CH_R, rightPWM);
+  setMotorTargets(-1, 1, leftPWM, rightPWM);
 }
+
 void turnRight(int leftPWM, int rightPWM) {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, HIGH);
+  setMotorTargets(1, -1, leftPWM, rightPWM);
+}
 
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
+// Gradually change PWM instead of jumping to target speed
+void updateMotorRamp() {
+  if (millis() - lastRampTime < RAMP_INTERVAL) {
+    return;
+  }
 
-  ledcWrite(PWM_CH_L, leftPWM);
-  ledcWrite(PWM_CH_R, rightPWM);
+  lastRampTime = millis();
+
+  // LEFT motor
+  if (currentLeftDirection != targetLeftDirection &&
+      currentLeftPWM > 0) {
+    currentLeftPWM = max(0, currentLeftPWM - RAMP_STEP);
+  }
+  else {
+    currentLeftDirection = targetLeftDirection;
+
+    if (currentLeftPWM < targetLeftPWM) {
+      currentLeftPWM = min(targetLeftPWM,
+                           currentLeftPWM + RAMP_STEP);
+    }
+    else if (currentLeftPWM > targetLeftPWM) {
+      currentLeftPWM = max(targetLeftPWM,
+                           currentLeftPWM - RAMP_STEP);
+    }
+  }
+
+  // RIGHT motor
+  if (currentRightDirection != targetRightDirection &&
+      currentRightPWM > 0) {
+    currentRightPWM = max(0, currentRightPWM - RAMP_STEP);
+  }
+  else {
+    currentRightDirection = targetRightDirection;
+
+    if (currentRightPWM < targetRightPWM) {
+      currentRightPWM = min(targetRightPWM,
+                            currentRightPWM + RAMP_STEP);
+    }
+    else if (currentRightPWM > targetRightPWM) {
+      currentRightPWM = max(targetRightPWM,
+                            currentRightPWM - RAMP_STEP);
+    }
+  }
+
+  // RIGHT motor: IN1/IN2
+  digitalWrite(IN1, currentRightDirection < 0 ? HIGH : LOW);
+  digitalWrite(IN2, currentRightDirection > 0 ? HIGH : LOW);
+
+  // LEFT motor: IN3/IN4
+  digitalWrite(IN3, currentLeftDirection < 0 ? HIGH : LOW);
+  digitalWrite(IN4, currentLeftDirection > 0 ? HIGH : LOW);
+
+  ledcWrite(PWM_CH_L, currentLeftPWM);
+  ledcWrite(PWM_CH_R, currentRightPWM);
 }
 
 void setup() {
   Serial.begin(115200);
-  
-  pinMode (LINE_L, INPUT); // define tracing sensor L output interface
-  pinMode (LINE_R, INPUT); // define tracing sensor R output interface
 
-  pinMode(LCD_POWER_ON, OUTPUT);
-  digitalWrite(LCD_POWER_ON, HIGH);
+  pinMode(LINE_L, INPUT);
+  pinMode(LINE_R, INPUT);
+
+  pinMode(LCD_POWER, OUTPUT);
+  digitalWrite(LCD_POWER, HIGH);
+
   pinMode(38, OUTPUT);
   digitalWrite(38, HIGH);
 
@@ -141,79 +175,99 @@ void setup() {
   pinMode(IN3, OUTPUT);
   pinMode(IN4, OUTPUT);
 
+  // Ensure motors are stopped at startup
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+
   ledcSetup(PWM_CH_L, PWM_FREQ, PWM_RES);
   ledcSetup(PWM_CH_R, PWM_FREQ, PWM_RES);
 
   ledcAttachPin(ENA, PWM_CH_R);
   ledcAttachPin(ENB, PWM_CH_L);
 
+  ledcWrite(PWM_CH_L, 0);
+  ledcWrite(PWM_CH_R, 0);
+
   tft.init();
-  tft.fillScreen(TFT_BLACK);
-  tft.setCursor(10,10);
-  tft.setTextSize(2);
   tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+  esp_reset_reason_t reason = esp_reset_reason();
+
+  tft.setCursor(10, 50);
+  tft.printf("Reset reason: %d", (int)reason);
+
+  delay(3000);
+  tft.fillScreen(TFT_BLACK);
 }
 
 void loop() {
-  if (leftEdgeDetected() && rightEdgeDetected()) {
-    turnRight(getPWM(80), getPWM(80));
+  int leftLine = leftEdgeDetected();
+  int rightLine = rightEdgeDetected();
+
+  const char* status = "ENEMY NOT FOUND";
+  int distance = 0;
+
+  // Edge avoidance takes priority
+  if (leftLine && rightLine) {
+    status = "EDGE BOTH";
+    turnRight(getPWM(100), getPWM(100));
   }
-  else if (leftEdgeDetected()) {
-    turnRight(getPWM(80), getPWM(80));
+  else if (leftLine) {
+    status = "EDGE LEFT";
+    turnRight(getPWM(100), getPWM(100));
   }
-  else if (rightEdgeDetected()) {
-    turnLeft(getPWM(80), getPWM(80));
+  else if (rightLine) {
+    status = "EDGE RIGHT";
+    turnLeft(getPWM(100), getPWM(100));
   }
   else {
-    int leftDistance = leftSensorDistance();
-    int rightDistance = rightSensorDistance();
+    // Read ONLY the left ultrasonic sensor
+    distance = leftSensorDistance();
 
-    bool leftEnemyDetected = (leftDistance > 0) && (leftDistance <= OPPONENT_THRESHOLD);
-    bool rightEnemyDetected = (rightDistance > 0) && (rightDistance <= OPPONENT_THRESHOLD);
+    bool enemyDetected =
+        (distance > 0) &&
+        (distance <= OPPONENT_THRESHOLD);
 
-    if (leftEnemyDetected && rightEnemyDetected) {
-      tft.setCursor(10,10);
-      tft.printf("%-23s", "ENEMY DETECTED");
-
-      int error = leftDistance - rightDistance;
-      int correction = Kp * error;
-
-      int basePWM = getPWM(70);
-
-      // If opponent is at attack distance and centred, attack at full speed
-      if ((leftDistance <= ATTACK_DISTANCE) && (rightDistance <= ATTACK_DISTANCE) && (abs(error) <= 3)) {
+    if (enemyDetected) {
+      if (distance <= ATTACK_DISTANCE) {
+        status = "ATTACKING";
         moveForward(MAX_PWM, MAX_PWM);
       }
-
       else {
-        int leftPWM = constrain(basePWM + correction, 0, MAX_PWM);
-        int rightPWM = constrain(basePWM - correction, 0, MAX_PWM);
-        moveForward(leftPWM, rightPWM);
+        status = "ENEMY DETECTED";
+        moveForward(getPWM(80), getPWM(80));
       }
     }
+    else {
+      status = "ENEMY NOT FOUND";
 
-    // ONLY LEFT ultrasonic detects opponent
-    else if (leftEnemyDetected) {
-      tft.setCursor(10,10);
-      tft.printf("%-23s", "ENEMY DETECTED ON LEFT");
-
-      turnLeft(getPWM(55), getPWM(55));
-    }
-
-    // ONLY RIGHT ultrasonic detects opponent
-    else if (rightEnemyDetected) {
-      tft.setCursor(10,10);
-      tft.printf("%-23s", "ENEMY DETECTED ON RIGHT");
-      turnRight(getPWM(55), getPWM(55));
-    }
-
-    // NEITHER ultrasonic detects opponent
-    if (!rightEnemyDetected && !leftEnemyDetected) {
-      tft.setCursor(10,10);
-      tft.printf("%-23s", "ENEMY NOT FOUND");
-      // Search for opponent by continuously rotating
-      turnRight(getPWM(75), getPWM(75));
+      // Search by rotating right
+      turnRight(getPWM(85), getPWM(85));
     }
   }
-  return;
+
+  // Apply gradual acceleration/deceleration
+  updateMotorRamp();
+
+  // Limit display updates to every 100 ms
+  if (millis() - lastDisplayTime >= 100) {
+    lastDisplayTime = millis();
+
+    tft.setCursor(10, 10);
+    tft.printf("%-23s", status);
+
+    tft.setCursor(10, 40);
+    tft.printf("Distance: %3d cm  ", distance);
+
+    tft.setCursor(10, 70);
+    tft.printf("L:%4d R:%4d  ",
+               currentLeftPWM, currentRightPWM);
+  }
+
+  delay(10);
 }

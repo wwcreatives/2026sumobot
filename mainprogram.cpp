@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <NewPing.h>
 #include <TFT_eSPI.h>
+#include "esp_system.h"
 
 // Right: IN1/2 Left: IN3/4
 #define ENA 17
@@ -46,7 +47,7 @@ unsigned long edgeStartTime = 0;
 bool leftButton = false;
 bool rightButton = false;
 
-float Kp = 100.0;
+float Kp = 10.0;
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -74,21 +75,21 @@ int rightSensorDistance() {
 }
 
 void moveForward(int leftPWM, int rightPWM) {
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
-
-  ledcWrite(PWM_CH_L, leftPWM);
-  ledcWrite(PWM_CH_R, rightPWM);
-}
-void moveBackward(int leftPWM, int rightPWM) {
   digitalWrite(IN1, LOW);
   digitalWrite(IN2, HIGH);
 
   digitalWrite(IN3, LOW);
   digitalWrite(IN4, HIGH);
+
+  ledcWrite(PWM_CH_L, leftPWM);
+  ledcWrite(PWM_CH_R, rightPWM);
+}
+void moveBackward(int leftPWM, int rightPWM) {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
 
   ledcWrite(PWM_CH_L, leftPWM);
   ledcWrite(PWM_CH_R, rightPWM);
@@ -105,21 +106,21 @@ void dontMove() {
 
 // Functions for left right pivoting/turning on spot NOT for driving
 void turnLeft(int leftPWM, int rightPWM) {
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, HIGH);
-
-  ledcWrite(PWM_CH_L, leftPWM);
-  ledcWrite(PWM_CH_R, rightPWM);
-}
-void turnRight(int leftPWM, int rightPWM) {
   digitalWrite(IN1, LOW);
   digitalWrite(IN2, HIGH);
 
   digitalWrite(IN3, HIGH);
   digitalWrite(IN4, LOW);
+
+  ledcWrite(PWM_CH_L, leftPWM);
+  ledcWrite(PWM_CH_R, rightPWM);
+}
+void turnRight(int leftPWM, int rightPWM) {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
 
   ledcWrite(PWM_CH_L, leftPWM);
   ledcWrite(PWM_CH_R, rightPWM);
@@ -152,6 +153,16 @@ void setup() {
   tft.setCursor(10,10);
   tft.setTextSize(2);
   tft.setRotation(1);
+
+  esp_reset_reason_t reason = esp_reset_reason();
+
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(10, 50);
+  tft.printf("Reset reason: %d", (int)reason);
+
+  delay(3000);
+  tft.fillScreen(TFT_BLACK);
 }
 
 void loop() {
@@ -175,36 +186,36 @@ void loop() {
       tft.setCursor(10,10);
       tft.printf("%-23s", "ENEMY DETECTED");
 
-      int error = leftDistance - rightDistance;
+      int error = rightDistance*rightDistance - leftDistance*leftDistance;
       int correction = Kp * error;
 
       int basePWM = getPWM(70);
 
       // If opponent is at attack distance and centred, attack at full speed
-      if ((leftDistance <= ATTACK_DISTANCE) && (rightDistance <= ATTACK_DISTANCE) && (abs(error) <= 3)) {
+      if ((leftDistance <= ATTACK_DISTANCE) && (rightDistance <= ATTACK_DISTANCE) && ((abs(error-21.25) <= 9))) {
         moveForward(MAX_PWM, MAX_PWM);
       }
 
       else {
-        int leftPWM = constrain(basePWM + correction, 0, MAX_PWM);
-        int rightPWM = constrain(basePWM - correction, 0, MAX_PWM);
+        int leftPWM = constrain(basePWM - correction, 0, MAX_PWM);
+        int rightPWM = constrain(basePWM + correction, 0, MAX_PWM);
         moveForward(leftPWM, rightPWM);
       }
     }
 
     // ONLY LEFT ultrasonic detects opponent
-    else if (leftEnemyDetected) {
+    else if (leftEnemyDetected && !rightEnemyDetected) {
       tft.setCursor(10,10);
       tft.printf("%-23s", "ENEMY DETECTED ON LEFT");
 
-      turnLeft(getPWM(55), getPWM(55));
+      turnLeft(getPWM(75), getPWM(75));
     }
 
     // ONLY RIGHT ultrasonic detects opponent
-    else if (rightEnemyDetected) {
+    else if (rightEnemyDetected && !leftEnemyDetected) {
       tft.setCursor(10,10);
       tft.printf("%-23s", "ENEMY DETECTED ON RIGHT");
-      turnRight(getPWM(55), getPWM(55));
+      turnRight(getPWM(75), getPWM(75));
     }
 
     // NEITHER ultrasonic detects opponent
