@@ -17,6 +17,8 @@
 #define TRIG_L 12
 #define MAX_DISTANCE 200
 
+#define LED_PIN 16
+
 #define LCD_POWER 15
 
 // HIGH = BLACK, LOW = WHITE
@@ -31,8 +33,8 @@
 #define PWM_RES 12
 #define MAX_PWM 4095
 
-#define OPPONENT_THRESHOLD 75
-#define ATTACK_DISTANCE 40
+#define OPPONENT_THRESHOLD 90
+#define ATTACK_DISTANCE 70
 
 #define RAMP_INTERVAL 5
 #define RAMP_STEP 200
@@ -167,6 +169,8 @@ void setup() {
   pinMode(LCD_POWER, OUTPUT);
   digitalWrite(LCD_POWER, HIGH);
 
+  pinMode(LED_PIN, OUTPUT);
+
   pinMode(38, OUTPUT);
   digitalWrite(38, HIGH);
 
@@ -196,12 +200,12 @@ void setup() {
   tft.setTextSize(2);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
-  esp_reset_reason_t reason = esp_reset_reason();
+  // esp_reset_reason_t reason = esp_reset_reason();
 
-  tft.setCursor(10, 50);
-  tft.printf("Reset reason: %d", (int)reason);
+  // tft.setCursor(10, 50);
+  // tft.printf("Reset reason: %d", (int)reason);
 
-  delay(3000);
+  // delay(3000);
   tft.fillScreen(TFT_BLACK);
 }
 
@@ -237,15 +241,17 @@ void loop() {
       if (distance <= ATTACK_DISTANCE) {
         status = "ATTACKING";
         moveForward(MAX_PWM, MAX_PWM);
+        digitalWrite(LED_PIN, HIGH);
       }
       else {
         status = "ENEMY DETECTED";
         moveForward(getPWM(80), getPWM(80));
+        digitalWrite(LED_PIN, HIGH);
       }
     }
     else {
       status = "ENEMY NOT FOUND";
-
+      digitalWrite(LED_PIN, LOW);
       // Search by rotating right
       turnRight(getPWM(85), getPWM(85));
     }
