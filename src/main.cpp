@@ -39,6 +39,12 @@
 #define RAMP_INTERVAL 5
 #define RAMP_STEP 200
 
+#define TURN_180_TIME 840  // Adjust to your robot's actual 180-degree turn
+
+bool edgeTurning = false;
+unsigned long edgeTurnStart = 0;
+int edgeTurnDirection = 1;
+
 int currentLeftPWM = 0;
 int currentRightPWM = 0;
 
@@ -216,20 +222,32 @@ void loop() {
   const char* status = "ENEMY NOT FOUND";
   int distance = 0;
 
-  // Edge avoidance takes priority
-  if (leftLine && rightLine) {
-    status = "EDGE BOTH";
+  // Start a committed 180-degree turn on edge detection
+if (!edgeTurning && (leftLine || rightLine)) {
+  edgeTurning = true;
+  edgeTurnStart = millis();
+
+  // Left or both -> right turn
+  // Right only -> left turn
+  edgeTurnDirection = (rightLine && !leftLine) ? -1 : 1;
+}
+
+// Continue turning even after the line is no longer detected
+if (edgeTurning) {
+  status = "EDGE TURN 180";
+
+  if (edgeTurnDirection == 1) {
     turnRight(getPWM(100), getPWM(100));
-  }
-  else if (leftLine) {
-    status = "EDGE LEFT";
-    turnRight(getPWM(100), getPWM(100));
-  }
-  else if (rightLine) {
-    status = "EDGE RIGHT";
-    turnLeft(getPWM(100), getPWM(100));
   }
   else {
+    turnLeft(getPWM(100), getPWM(100));
+  }
+
+  if (millis() - edgeTurnStart >= TURN_180_TIME) {
+    edgeTurning = false;
+  }
+}
+else {
     // Read ONLY the left ultrasonic sensor
     distance = leftSensorDistance();
 
@@ -253,7 +271,7 @@ void loop() {
       status = "ENEMY NOT FOUND";
       digitalWrite(LED_PIN, LOW);
       // Search by rotating right
-      turnRight(getPWM(85), getPWM(85));
+      turnRight(getPWM(70), getPWM(70));
     }
   }
 
